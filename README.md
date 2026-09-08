@@ -1,147 +1,144 @@
-# Shopify Live Domain Finder
+# ShopScan
 
-Discovers Shopify storefronts from public data, verifies which are actually
-live right now, deduplicates, and writes a plain list of domains.
+Finds live Shopify storefronts on their **own branded domains** — `hexclad.com`,
+`lifestraw.com`, `therabody.com` — rather than `*.myshopify.com` URLs. Ships as
+a Windows desktop app and a CLI over the same engine.
 
 ```
-Common Crawl ──> DNS prefilter ──> async verifier ──> sqlite dedupe ──> output
-domain ranks     is it in         (fingerprint +      (resume-safe)  shopify_domains.txt
-(~200M, streamed  23.227.32.0/19   liveness, follows                 results.ndjson
- at ~270k/s)      = Shopify?)      redirects)
-                  ~1% pass         ~98% confirm
+Common Crawl domain ranks  ──>  DNS prefilter  ──>  HTTP verifier  ──>  SQLite
+118M hostnames, seeked          resolves into       fingerprint +        dedupe,
+locally from a 2 GB cache       23.227.32.0/19?     follow redirects     resumable
+                                ~1% pass            record final host
 ```
 
-Output is custom branded domains (`therabody.com`, `hexclad.com`,
-`lifestraw.com`), not `*.myshopify.com` URLs.
+The DNS prefilter is the whole design. A lookup costs one UDP round trip and
+never touches Shopify, so ~99% of candidates are eliminated for free and only
+the survivors cost an HTTP request. Current database: **86,000 domains.**
 
-## Install
+## Running it
+
+**Desktop app** — `installer/ShopScan-Setup-<version>.exe`, or just
+`dist/ShopScan.exe`. Native window, no terminal, no Python required. The
+installer asks where to keep the database and the 2 GB crawl cache so both
+survive upgrades.
+
+**CLI:**
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
+
+python run.py --limits                        # am I being throttled right now?
+python run.py --purge-backlog                 # clear dead retry candidates
+python run.py --target 1000 --source ccranks  # scan
+python run.py --serve                         # same dashboard in a browser
 ```
 
-`aiodns` is required for the DNS prefilter. Without it, pass
-`--no-dns-prefilter` -- correct but far slower.
-
-## Run
-
-```bash
-# 1. check the live sources are reachable from your machine
-python run.py --doctor
-
-# 2. dashboard with a BEGIN SCAN button — http://127.0.0.1:8787
-python run.py --serve
-```
-
-Or stay in the terminal:
-
-```bash
-# smoke test — 100 live domains
-python run.py --target 100 --source crtsh
-
-# production run
-python run.py --target 25000 --source crtsh --source commoncrawl \
-    --concurrency 400 --rate 25
-
-# verify a list you already have
-python run.py --source file --file my_hosts.txt --target 5000
-```
-
-Output lands in `output/shopify_domains.txt` (one domain per line) and
-`output/results.ndjson` (full records with confidence + evidence).
-
-Kill it any time. State lives in `data/finder.db`; rerunning resumes and
-never re-emits a domain you already have. Want a clean slate? `--db data/new.db`.
-
-## Sources
-
-| Source | What it does | Yield |
-|---|---|---|
-| `crtsh` | Certificate transparency — every `*.myshopify.com` that ever got a cert | Thousands in one request |
-| `commoncrawl` | Common Crawl index, platform hostnames | Deep, slow, run overnight |
-| `ccdomains` | Common Crawl, **fingerprint only** — no platform hostname in the URL | Low hit rate, finds stores the others miss |
-| `file` | Your own list of hosts to verify | Whatever you feed it |
-
-## The core trick
-
-Every `*.myshopify.com` hostname is a confirmed Shopify store — no guessing.
-Most merchants on a custom domain have their `myshopify.com` URL 301 to that
-custom domain for SEO. So the verifier follows redirects and records the
-**final** hostname. That turns a list of myshopify subdomains into a list of
-real branded storefronts, with a hit rate near 100% instead of the ~2% you'd
-get spraying requests at random crawled domains.
-
-Stores that don't redirect keep their `shop-name.myshopify.com` identity
-rather than being collapsed to the `myshopify.com` apex.
+Output is `output/shopify_domains.txt` (one domain per line) and
+`results.ndjson` (full records with confidence and evidence). State lives in
+SQLite; stopping and rerunning resumes without re-emitting anything.
 
 ## Detection
 
-Confidence 0–100, default cutoff 70 (`--threshold`).
+Scored 0–100, default cutoff 70. **Detection never looks at the URL** — that is
+deliberate, since the goal is branded domains, not hostnames containing
+"shopify".
 
 | Signal | Score |
 |---|---|
-| `x-shopid` / `x-shopify-stage` / `x-sorting-hat-shopid` response header | 100 |
+| `x-shopid` / `x-sorting-hat-shopid` header | 100 |
 | `powered-by: shopify` | 100 |
-| `cdn.shopify.com` or `/cdn/shop/` in HTML | 85 |
+| `cdn.shopify.com`, `/cdn/shop/` in HTML | 85 |
 | `Shopify.theme`, `shopify-features` | 75–80 |
-| bare `myshopify.com` mention | 40 (too weak alone — blogs mention it) |
+| bare `myshopify.com` mention | 40 — too weak alone, blogs mention it |
 
-Only the first 96 KB of each response is read, and non-HTML content types are
-skipped entirely. Keeps bandwidth low at high concurrency.
+Measured over the result set: the `powered-by` header alone confirms 93.1%;
+body markers still carry ~85% if Shopify ever drops it. Only the first 96 KB of
+a response is read.
 
-## Tuning for throughput
+## What this project is actually about
 
-`--rate` caps requests/second across all workers. `--concurrency` caps
-in-flight sockets. Verified output = rate × hit rate.
+Most of the work was not writing the scanner. It was finding out why a working
+scanner kept slowing down. Every one of these presented as "rate limiting" and
+none of them was:
 
-| Goal | `--rate` | `--concurrency` | Notes |
-|---|---|---|---|
-| 100/min | 4 | 60 | gentle |
-| 250/min | 8 | 150 | |
-| **600/min** | **18–20** | **300–400** | needs a pre-filled candidate queue |
+**A 429 is two different things.** Shopify fronts its edge with Cloudflare, so a
+429 is either a rate limit *or* a bot challenge (`cf-mitigated` header). They
+need opposite responses — backing off clears one and does nothing for the other.
+Counting them separately turned an invisible problem into an obvious one.
 
-Measured on the included mock network: `--rate 10` produced 630 checks/min and
-541 verified domains/min at an 86% hit rate — the cap is accurate. Real-world
-hit rate runs lower (dead stores, password-protected stores, timeouts), so
-budget ~20 req/s for 600/min.
+**The challenge state is sticky.** Once triggered, no request-side setting
+recovers it. Measured: 96% challenged at 10 req/s; still 96% after automatic
+backoff to **one request every four seconds**. No rate limit behaves that way,
+which is how we knew it was an IP-reputation block and not throttling.
 
-Requests are spread across thousands of different hosts, and `limit_per_host`
-is 2 — no individual store sees meaningful load.
+**A retry backlog can poison every run.** Failed hosts were re-fed at the start
+of each scan, and because they had already passed the IP prefilter once they
+re-passed it every time, consuming the entire request budget before a single
+fresh candidate was checked. The tell was the prefilter pass rate reading 14%
+instead of ~1%.
 
-## Testing without touching the internet
+**An unhandled exception can kill workers one at a time.** `get_encoding()`
+raises on a bounded response body with no charset header. It wasn't caught, so
+every charset-less response permanently killed one HTTP worker — a scan decayed
+to zero over 20 minutes while still reporting itself healthy.
+
+**Slow infrastructure is worse than dead infrastructure.** The DNS pool benched
+resolvers that stopped answering but not ones that answered slowly. Two
+resolvers at 600–775 ms (against 7–45 ms) held an 800-slot pool to a third of
+its throughput, because each slow slot is held 20× longer while round-robin
+keeps feeding it work.
+
+Five confident diagnoses were wrong before each of these turned up. They're
+written down in `ENGINEERING.md` alongside the measurements that disproved them,
+because a wrong theory that fits the symptoms costs more than no theory.
+
+## Testing
 
 ```bash
-sudo python3 tests/mock_net.py &          # 200 fake storefronts on 127.0.0.1:80
-# add the hostnames to /etc/hosts (see the script), then:
-python run.py --source file --file seeds.txt --target 100
+python tests/run_mock.py        # 200-storefront fixture, no network
+python tests/proxy_rotation.py  # proxy pool logic, no network
+python tests/proxy_check.py     # routes real traffic through a local proxy
 ```
 
-Ground-truth run: 172/172 expected domains found, 0 false positives, 0 parked
-pages leaked through.
+`run_mock.py` serves a fixture of 200 storefronts (55% redirect to a custom
+domain, 30% direct, 15% parked junk) and runs detection, redirect following,
+deduplication and the store against it. Current: **172/172 found, 0 missed,
+0 false positives.**
+
+## Proxies (optional)
+
+Shopify limits and blocks by client IP, so extra exit IPs are the only way past
+its per-IP ceiling. `--proxy-file` takes a list; only a few are put into
+rotation at a time and the rest are held as untouched spares, since HTTP is not
+the bottleneck and rotating everything just spreads reputation wear over more
+addresses for no gain. A dying proxy is replaced automatically.
+
+Only the HTTP stage is proxied — DNS stays local, so a proxy carries roughly 1%
+of total traffic.
 
 ## Honest limits
 
-- **The candidate producer is the bottleneck, not the verifier.** Common
-  Crawl's index server is slow and rate-limited; crt.sh 502s under load. Run
-  discovery ahead of time to fill the DB, then the verifier hits 600/min
-  easily against a full queue. Treat them as two separate jobs.
-- **No method finds every Shopify store.** Common Crawl only has what it
-  crawled. CT logs only have what got a cert. You're sampling, not enumerating.
-- Custom domains behind Cloudflare sometimes strip Shopify headers — body
-  detection catches most of these, but not all.
-- Password-protected and pre-launch stores return 401/302-to-password and are
-  counted as not-live. Lower `--threshold` at your own risk (false positives
-  climb fast below 70).
-- With N concurrent workers you may overshoot `--target` by up to N, since
-  in-flight requests finish after the stop signal.
-- A host that can't be reached (timeout, DNS failure, refused connection) is
-  retried up to 3 times and then parked — **not** counted as "not Shopify".
-  `reset_unreached()` runs automatically at the start of every scan, so a
-  network blip never permanently burns candidates.
+- **Throughput is governed by the exit IP, not the code.** Best sustained run:
+  ~300 domains/min. Best burst: 752/min. On a challenged IP: near zero, and no
+  setting fixes it. One good scan per day is the realistic pattern on a single
+  address.
+- **You are sampling, not enumerating.** Common Crawl only contains what it
+  crawled.
+- **Stores behind Cloudflare or another CDN are invisible to the prefilter** —
+  they resolve to the CDN, not Shopify, and get skipped. `gymshark.com` is one.
+  `--no-dns-prefilter` has no blind spot but is far slower.
+- **Density falls with crawl rank.** ~1.9% of hostnames near the top of the
+  ranking are Shopify; ~0.7–0.9% deeper in. Yield drops accordingly.
+- Password-protected and suspended stores return 402/401 and are correctly
+  counted as not-live.
 
-## If you're using this for outreach
+## Conduct
 
-The list is domains, not contacts. Anything you send afterward is still
-governed by CAN-SPAM / CASL / GDPR, and Shopify merchants get pitched
-constantly. Worth knowing before you build a funnel on it.
+Requests carry an identifying User-Agent and normal browser headers,
+`limit_per_host` is 2, and the request rate is capped globally and adjusts
+itself downward automatically when the edge signals it is unhappy. The scanner
+reads publicly served homepages — the same pages any browser would fetch — and
+is built to back off rather than push through.
+
+The output is a list of domains, not contacts. Anything you send afterwards is
+still governed by CAN-SPAM, CASL and GDPR.

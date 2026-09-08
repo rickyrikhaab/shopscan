@@ -3,7 +3,7 @@
 Why this exists: the *.myshopify.com CDX route (commoncrawl.py) tops out at
 roughly 6,600 unique hosts per crawl, and ~97% of those never redirect to a
 custom domain -- so it produces a list of myshopify.com URLs, which is the
-opposite of what we want. See CLAUDE.md "the redirect trick".
+opposite of what we want. See ENGINEERING.md "the redirect trick".
 
 The hyperlink-graph domain ranks file is ~200M domains, gzip-streamed at
 ~270k domains/sec, ordered by harmonic centrality (so real businesses come

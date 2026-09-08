@@ -1,7 +1,7 @@
 # Handoff — Shopify storefront finder
 
 You are picking up a working tool with one unresolved performance question.
-Read this before changing anything. Read `CLAUDE.md` too — it has the original
+Read this before changing anything. Read `ENGINEERING.md` too — it has the original
 design rationale and the load-bearing decisions.
 
 **Current state: works, 44,371 domains collected, runs at roughly 200–420
@@ -357,7 +357,7 @@ you would need 3+ such proxies, and residential exits would likely each carry
 more. Datacentre IPs are exactly what Cloudflare challenges hardest.
 
 This is what turned up the real finding: **429 was hiding a bot challenge.**
-See "429 is two different things" in CLAUDE.md. The project had been treating
+See "429 is two different things" in ENGINEERING.md. The project had been treating
 every 429 as a Shopify rate limit for days, and the two need opposite
 responses.
 

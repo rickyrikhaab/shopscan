@@ -34,7 +34,7 @@ SHOPIFY_NETS = [ipaddress.ip_network("23.227.32.0/19")]
 # Free public resolvers all enforce some per-client quota. For sustained
 # operation point --nameserver at a local recursive resolver (unbound,
 # dnsmasq, knot-resolver) instead -- it talks to authoritative servers
-# directly and has no quota to trip. See "The real ceiling" in CLAUDE.md.
+# directly and has no quota to trip. See "The real ceiling" in ENGINEERING.md.
 # The nine that were in place during the fastest measured runs (546/549/523
 # domains/min). A 21-resolver pool and per-resolver pacing were tried and are
 # preserved in shopify-finder-BACKUP-20260825-2202.zip -- they fixed a real
