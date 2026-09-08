@@ -173,7 +173,7 @@ def build_app(db="data/finder.db", out="output") -> web.Application:
         # whole HTTP budget, so fresh candidates never get
         # verified -- the prefilter pass rate jumps from ~1% to
         # 14%+, which is the tell.
-        cfg["backlog_budget"] = int(cfg.get("backlog_budget", 500))
+        cfg["backlog_budget"] = int(cfg.get("backlog_budget", 0))
         # 1200. An earlier 400 default came from a benchmark against
         # non-existent domains, which resolve from cache in ~5ms; real domains
         # take ~300ms, so they need far more in flight. Measured on real

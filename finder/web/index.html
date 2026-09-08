@@ -389,13 +389,14 @@ details.adv[open] summary{margin-bottom:10px}
       </div>
       <div class="field">
         <label for="backlogbudget">Backlog hosts per run</label>
-        <input id="backlogbudget" type="number" value="500" min="0" step="100">
-        <div class="hint">Failed hosts retried at the start of a scan.
-          Measured at 5000 against a large backlog: the same known-bad hosts
-          re-pass the DNS filter every run and eat the whole request budget,
-          so fresh candidates never get verified — the tell is a prefilter
-          pass rate of 14% instead of ~1%. <b>0</b> scans only fresh
-          candidates.</div>
+        <input id="backlogbudget" type="number" value="0" min="0" step="100">
+        <div class="hint">Previously-failed hosts retried before any fresh
+          candidate is checked. <b>0 is the right answer while the backlog is
+          large.</b> With 697,000 dead hosts queued, re-feeding even 500 of
+          them front-loads roughly the first 40 seconds of a run with hosts
+          already known to fail — a short scan then finds nothing at all.
+          Measured: 0 found with 500 re-fed, 27 found in the same 20 seconds
+          with 0. Purge the backlog rather than draining it this way.</div>
       </div>
       <div class="field">
         <label for="threshold">Confidence cutoff</label>

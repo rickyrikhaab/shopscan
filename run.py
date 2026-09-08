@@ -156,7 +156,7 @@ def main():
     p.add_argument("--proxy-probe-all", action="store_true",
                    help="with --limits, probe every proxy instead of just "
                         "the active rotation. Puts traffic on your reserves.")
-    p.add_argument("--backlog-budget", type=int, default=500,
+    p.add_argument("--backlog-budget", type=int, default=0,
                    help="hosts re-fed from the retry backlog at the start "
                         "of a run (default 5000). 0 skips the backlog "
                         "entirely and scans only fresh candidates.")
