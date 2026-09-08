@@ -346,10 +346,13 @@ details.adv[open] summary{margin-bottom:10px}
         <summary>Advanced settings</summary>
       <div class="field">
         <label for="rate">Requests per second</label>
-        <input id="rate" type="number" value="10" min="1" step="1">
-        <div class="hint">Storefront requests/sec. 10 runs indefinitely at
-          100% success. <b>Do not raise this</b> — sustained 60 trips
-          Shopify's per-IP limit and everything 429s for minutes.</div>
+        <input id="rate" type="number" value="5" min="1" step="1">
+        <div class="hint">Storefront requests/sec, direct connection.
+          <b>5 is the measured ceiling</b> — at 10 the edge bot-challenges
+          ~97% of requests within about twenty seconds and the scan produces
+          nothing for the rest of the run. Backing off afterwards does not
+          clear it. With proxies configured this is raised automatically to
+          rotation size x per-proxy rate.</div>
       </div>
       <div class="field">
         <label for="concurrency">Concurrent connections</label>
