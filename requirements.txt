@@ -1,0 +1,4 @@
+aiohttp>=3.9
+tldextract>=5.0
+certifi>=2024.2.2
+aiodns>=3.1

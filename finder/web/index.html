@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShopScan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ---------- palette: light is the base, dark overrides the tokens ---------- */
+:root{
+  /* Declaring color-scheme stops the browser force-darkening the page with
+     its own auto-dark heuristic, which overrode body's background even though
+     every --token resolved correctly. Also themes scrollbars and form
+     controls to match. */
+  color-scheme: light;
+  --paper:#E9ECE7; --panel:#fff; --rule:#C6CCC4; --rule-soft:#D8DDD6;
+  --ink:#151B18; --ink-2:#39423D; --mute:#6B756F; --faint:#98A19B;
+  --signal:#2F5FD0; --verified:#1B6B4C; --reject:#A8452F; --warn:#8A6410;
+  --grid:rgba(0,0,0,.045);
+  --btn-fg:#E9ECE7;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --paper:#121614; --panel:#1A201D; --rule:#2E3733; --rule-soft:#232B27;
+    --ink:#EAEEEA; --ink-2:#C2CAC5; --mute:#8B958F; --faint:#5D6862;
+    --signal:#78A6FF; --verified:#5FD3A0; --reject:#FF8B6E; --warn:#E3B24A;
+    --grid:rgba(255,255,255,.05);
+    --btn-fg:#121614;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --paper:#121614; --panel:#1A201D; --rule:#2E3733; --rule-soft:#232B27;
+  --ink:#EAEEEA; --ink-2:#C2CAC5; --mute:#8B958F; --faint:#5D6862;
+  --signal:#78A6FF; --verified:#5FD3A0; --reject:#FF8B6E; --warn:#E3B24A;
+  --grid:rgba(255,255,255,.05);
+  --btn-fg:#121614;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+/* The themed background lives on <html>, not <body>. A background set on body
+   propagates to the page canvas, and that propagated paint did not re-resolve
+   when the theme tokens changed -- body stayed on whatever colour it had at
+   load while every other element flipped correctly. Painting <html> directly
+   sidesteps the propagation. Longhands only, for the same reason: a `var()`
+   in the `background` shorthand alongside a later `background-image` longhand
+   also left the computed colour stale. */
+html{
+  background-color:var(--paper);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:100% 28px, 28px 100%;
+}
+body{
+  margin:0; background-color:transparent; color:var(--ink);
+  font-family:var(--sans);
+}
+/* NOTE: deliberately no transition on any themed property. A transition on a
+   property whose value comes from a custom property that changes leaves the
+   computed value stale here -- every untransitioned element flipped theme
+   correctly while the two transitioned ones (html background-color, body
+   color) froze at their load-time colour. The 180ms fade is not worth it. */
+.wrap{max-width:1240px;margin:0 auto;padding:26px 24px 72px}
+
+/* ---------------- masthead ---------------- */
+.masthead{display:flex;align-items:flex-end;justify-content:space-between;
+  gap:20px;border-bottom:2px solid var(--ink);padding-bottom:13px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px}
+.title{font-family:var(--mono);font-weight:700;font-size:19px;letter-spacing:-.02em}
+.title span{color:var(--mute);font-weight:400}
+.themebtn{width:auto;padding:6px 10px;font-size:11px;background:transparent;
+  color:var(--mute);border:1px solid var(--rule);border-radius:99px;
+  letter-spacing:.08em}
+.themebtn:hover{background:var(--rule-soft);color:var(--ink)}
+
+/* the four headline numbers ------------------------------------------------ */
+.readout{display:flex;gap:26px;font-family:var(--mono);flex-wrap:wrap}
+.metric{text-align:right;min-width:74px}
+.metric b{display:block;font-size:22px;font-weight:600;line-height:1.05;
+  font-variant-numeric:tabular-nums;color:var(--ink-2);letter-spacing:-.02em}
+.metric i{font-style:normal;font-size:9.5px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--faint);display:block;margin-top:5px}
+/* the two that matter get the weight */
+.metric.hero b{font-size:38px;font-weight:700;color:var(--signal);
+  letter-spacing:-.035em}
+.metric.hero i{color:var(--mute);font-weight:500}
+.metric.key b{font-size:28px;font-weight:700;color:var(--ink)}
+.metric.key i{color:var(--mute)}
+.metric b small{font-size:.5em;font-weight:500;color:var(--faint);
+  letter-spacing:0;margin-left:2px}
+
+/* ---------------- throughput ---------------- */
+.through{border-bottom:1px solid var(--rule);padding:12px 0 0}
+.through .bar{display:flex;justify-content:space-between;align-items:baseline;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:2px}
+.through .peak{letter-spacing:.04em;text-transform:none;font-size:11px;
+  color:var(--mute);font-variant-numeric:tabular-nums}
+.chart{position:relative;height:76px}
+.chart svg{display:block;width:100%;height:76px}
+.chart .now{position:absolute;right:0;top:2px;font-family:var(--mono);
+  font-size:11px;color:var(--signal);font-weight:600;
+  font-variant-numeric:tabular-nums;background:var(--paper);padding-left:6px}
+
+/* secondary counters — the ones that get big on long runs ------------------ */
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
+  gap:1px;background:var(--rule-soft);border:1px solid var(--rule-soft);
+  border-top:none;margin-bottom:20px}
+.cell{background:var(--paper);padding:9px 11px}
+.cell b{display:block;font-family:var(--mono);font-size:15px;font-weight:600;
+  font-variant-numeric:tabular-nums;color:var(--ink-2);line-height:1.2}
+.cell i{font-style:normal;font-size:9px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--faint);display:block;margin-top:3px}
+.cell.ok b{color:var(--verified)}
+.cell.warnish b{color:var(--warn)}
+
+/* progress toward target --------------------------------------------------- */
+.prog{height:3px;background:var(--rule-soft);margin-top:11px;overflow:hidden}
+.prog div{height:100%;width:0;background:var(--signal);transition:width .4s ease}
+
+/* ---------------- layout ---------------- */
+.cols{display:grid;grid-template-columns:300px 1fr;gap:32px;margin-top:4px}
+@media(max-width:860px){.cols{grid-template-columns:1fr}}
+
+/* ---------------- controls ---------------- */
+.panel h2{font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--faint);margin:0 0 11px;font-weight:600}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;color:var(--ink-2);margin-bottom:5px;
+  font-weight:500}
+.field input{width:100%;font-family:var(--mono);font-size:13px;
+  padding:9px 10px;border:1px solid var(--rule);background:var(--panel);
+  color:var(--ink);border-radius:3px}
+.field input:focus{outline:2px solid var(--signal);outline-offset:-1px;
+  border-color:var(--signal)}
+.hint{font-size:11px;color:var(--mute);line-height:1.5;margin-top:5px}
+.hint b{color:var(--reject);font-weight:600}
+.field input[type=text]{font-family:var(--mono)}
+.hint em{font-style:italic;color:var(--ink-2)}
+.sources{display:flex;flex-direction:column;gap:9px}
+.src{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;cursor:pointer;
+  color:var(--ink-2);font-weight:500}
+.src input{margin:3px 0 0;accent-color:var(--signal)}
+.src em{font-style:normal;color:var(--mute);display:block;font-size:11px;
+  font-weight:400;line-height:1.5;margin-top:2px}
+button{font-family:var(--mono);font-size:12px;letter-spacing:.06em;
+  padding:12px 14px;border:1px solid var(--ink);background:var(--ink);
+  color:var(--btn-fg);cursor:pointer;border-radius:3px;width:100%;
+  font-weight:600;transition:opacity .15s}
+button:hover{opacity:.88}
+button.ghost{background:transparent;color:var(--ink);font-weight:500}
+button.ghost:hover{background:var(--rule-soft);opacity:1}
+button:disabled{opacity:.32;cursor:not-allowed}
+button.stop{background:var(--reject);border-color:var(--reject);color:#fff}
+.btnrow{display:flex;gap:8px;margin-top:16px}
+.exports{display:flex;flex-direction:column;gap:6px}
+.exprow{display:grid;grid-template-columns:1fr auto;gap:6px}
+button.cp{padding:10px 11px;font-size:10px;letter-spacing:.1em;width:auto;
+  color:var(--mute)}
+button.cp:hover{color:var(--ink)}
+button.cp.done{background:var(--verified);border-color:var(--verified);
+  color:#fff}
+.copied{font-family:var(--mono);font-size:11px;color:var(--verified);
+  min-height:15px;margin-top:7px}
+button.exp{display:flex;justify-content:space-between;align-items:center;
+  text-align:left;padding:10px 12px}
+button.exp em{font-style:normal;font-variant-numeric:tabular-nums;
+  color:var(--verified);font-weight:700;font-size:12px}
+button.exp:disabled em{color:var(--faint)}
+
+/* ---------------- ledger ---------------- */
+.ledger{border-top:2px solid var(--ink)}
+.ledger .head,.row{display:grid;grid-template-columns:52px 1fr 88px 1fr;
+  gap:14px;align-items:center;font-family:var(--mono);font-size:12.5px;
+  padding:7px 0;border-bottom:1px solid var(--rule-soft)}
+.ledger .head{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint);border-bottom:1px solid var(--rule);font-weight:600}
+.row .n{color:var(--faint);font-size:11px;font-variant-numeric:tabular-nums}
+.row .d{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:var(--ink);font-weight:500}
+.row .c{color:var(--verified);letter-spacing:-.5px;font-size:11px}
+.row .v{color:var(--mute);font-size:11px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.row.new{animation:in .3s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(-3px)}to{opacity:1}}
+
+/* run separator — the thing that rules off each scan ----------------------- */
+.sep{display:flex;align-items:center;gap:12px;margin:0;padding:13px 0 11px;
+  border-bottom:1px solid var(--rule);border-top:1px solid var(--rule);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--mute);background:var(--rule-soft)}
+.sep .tag{font-weight:700;color:var(--ink);letter-spacing:.08em;padding-left:10px}
+.sep .count{color:var(--verified);font-weight:600;letter-spacing:.02em;
+  text-transform:none;font-variant-numeric:tabular-nums}
+.sep .when{color:var(--faint);letter-spacing:.02em;text-transform:none}
+.sep .line{flex:1;height:1px;background:var(--rule)}
+.sep .arrow{color:var(--faint);padding-right:10px;letter-spacing:0}
+
+.empty{padding:44px 0;color:var(--mute);font-size:13px;max-width:46ch;
+  line-height:1.65}
+.empty code{font-family:var(--mono);font-size:12px;background:var(--panel);
+  padding:2px 6px;border:1px solid var(--rule);border-radius:2px;color:var(--ink)}
+.err{margin-top:14px;padding:10px 12px;border-left:3px solid var(--reject);
+  background:var(--panel);font-family:var(--mono);font-size:12px;
+  color:var(--reject);line-height:1.5}
+.log{margin-top:14px;font-family:var(--mono);font-size:11.5px;color:var(--mute);
+  line-height:1.6}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Primary actions sit above everything: starting a scan and purging the
+   backlog are the only two controls touched on a normal run, and they used
+   to be below a scroll. */
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 10px}
+.actions button{margin:0;width:100%}
+.actions #go{font-size:15px;padding:14px 0}
+details.adv{margin-top:24px;border-top:1px solid var(--line);padding-top:14px}
+details.adv summary{cursor:pointer;font:600 11px/1 ui-monospace,monospace;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+  padding:6px 0;user-select:none}
+details.adv summary:hover{color:var(--fg)}
+details.adv[open] summary{margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="brand">
+      <div class="title">SHOPSCAN <span>/ shopify discovery</span></div>
+      <button id="theme" class="themebtn ghost" title="Toggle light / dark">AUTO</button>
+    </div>
+    <div class="readout">
+      <div class="metric hero"><b id="m-rate">0</b><i>domains / min</i></div>
+      <div class="metric key"><b id="m-found">0</b><i>found this run</i></div>
+      <div class="metric"><b id="m-checked">0</b><i>verified</i></div>
+      <div class="metric"><b id="m-total">0</b><i>in database</i></div>
+    </div>
+  </div>
+
+  <div class="prog"><div id="progbar"></div></div>
+
+  <div class="through">
+    <div class="bar">
+      <span>throughput — domains / min</span>
+      <span class="peak" id="peak"></span>
+    </div>
+    <div class="chart">
+      <svg id="ribbon" viewBox="0 0 1000 76" preserveAspectRatio="none">
+        <polyline id="grid1" fill="none" stroke="var(--rule-soft)" stroke-width="1"/>
+        <polygon  id="area"  fill="var(--signal)" opacity=".10"/>
+        <polyline id="spark" fill="none" stroke="var(--signal)" stroke-width="1.8"
+                  stroke-linejoin="round"/>
+      </svg>
+      <div class="now" id="now"></div>
+    </div>
+  </div>
+
+  <div class="strip">
+    <div class="cell"><b id="s-dns">—</b><i>dns lookups</i></div>
+    <div class="cell"><b id="s-dnsrate">—</b><i>dns / sec</i></div>
+    <div class="cell ok"><b id="s-pass">—</b><i>shopify ip hits</i></div>
+    <div class="cell"><b id="s-hit">—</b><i>confirm rate</i></div>
+    <div class="cell"><b id="s-queue">—</b><i>queued</i></div>
+    <div class="cell warnish"><b id="s-dead">—</b><i>dead / retry</i></div>
+    <div class="cell"><b id="s-backlog">—</b><i>backlog</i></div>
+    <div class="cell" id="cell-proxy" hidden><b id="s-proxy">—</b><i>proxies act/res</i></div>
+    <div class="cell"><b id="s-elapsed">—</b><i>elapsed</i></div>
+    <div class="cell"><b id="s-eta">—</b><i>eta</i></div>
+  </div>
+
+  <div class="cols">
+    <div class="panel">
+      <div class="actions">
+        <button id="go">BEGIN SCAN</button>
+        <button id="purge" class="ghost exp">
+          <span>PURGE BACKLOG</span><em id="x-backlog">0</em></button>
+      </div>
+      <div class="hint" id="purgehint">Purge retires hosts that have
+        already failed once. They get retried at the start of every
+        scan and crowd out fresh candidates. Results are untouched.
+        Stop the scan first.</div>
+
+      <h2 style="margin-top:24px">Run</h2>
+      <div class="field">
+        <label for="target">Stop after</label>
+        <input id="target" type="number" value="1000" min="1">
+        <div class="hint">1,000 lands inside the fast part of the curve
+          (~2 min). Past ~1,500 in one session the resolver quota bites.</div>
+      </div>
+      <div class="field">
+        <label for="proxies">Proxies</label>
+        <div class="hint" id="proxycount"></div>
+        <textarea id="proxies" rows="3" spellcheck="false"
+                  placeholder="blank = direct connection&#10;host:port or user:pass@host:port, one per line"></textarea>
+        <div class="hint">Shopify limits by <b>client IP</b>, so extra exit
+          IPs are the only way past ~10 req/s. Leave blank and nothing
+          changes — the scan runs exactly as it does today. DNS always stays
+          local, so a proxy only carries the ~1% of candidates that pass the
+          prefilter. Bare <b>host:port</b> is treated as HTTP;
+          <b>socks5://</b> needs the aiohttp-socks package.</div>
+      </div>
+      <div class="field">
+        <label for="proxyqps">Requests/sec per proxy</label>
+        <input id="proxyqps" type="number" value="5" min="1" step="1">
+        <div class="hint">Each proxy is its own IP with its own allowance.
+          Keep under 10 — that is the measured per-IP ceiling. The scan's
+          overall rate cap becomes proxies x this number.</div>
+      </div>
+      <div class="field">
+        <label for="proxyactive">Proxies in rotation</label>
+        <input id="proxyactive" type="number" value="5" min="0" step="1">
+        <div class="hint">Paste every proxy you own above — only this many
+          are used at once. The rest stay <b>completely untouched</b> in
+          reserve, and one steps in the moment an active proxy starts
+          refusing. A bigger rotation does not scan faster: measured, five
+          proxies used 2.3 of an available 25 req/s because DNS could not
+          feed them any quicker. It just spreads wear over more of your IPs.
+          <b>0</b> rotates all of them.</div>
+      </div>
+
+      <h2 style="margin-top:24px">Sources</h2>
+      <div class="sources">
+        <label class="src"><input type="checkbox" value="ccranks" checked>
+          <span>Common Crawl — domain ranks <b>(recommended)</b>
+            <em>200M ranked domains, screened on Shopify IP space.
+              This is the one that finds custom branded domains at
+              volume — ~550/min measured.</em></span></label>
+        <label class="src"><input type="checkbox" value="commoncrawl">
+          <span>Common Crawl — platform hosts
+            <em>Only ~6,600 myshopify.com hosts exist per crawl, and ~97%
+              never redirect to a custom domain. Small and quickly
+              exhausted.</em></span></label>
+        <label class="src"><input type="checkbox" value="crtsh">
+          <span>Certificate transparency
+            <em>Fast bootstrap when crt.sh is up — it 502s most of the
+              time under load.</em></span></label>
+      </div>
+
+      <details class="adv">
+        <summary>Advanced settings</summary>
+      <div class="field">
+        <label for="rate">Requests per second</label>
+        <input id="rate" type="number" value="10" min="1" step="1">
+        <div class="hint">Storefront requests/sec. 10 runs indefinitely at
+          100% success. <b>Do not raise this</b> — sustained 60 trips
+          Shopify's per-IP limit and everything 429s for minutes.</div>
+      </div>
+      <div class="field">
+        <label for="concurrency">Concurrent connections</label>
+        <input id="concurrency" type="number" value="300" min="1">
+        <div class="hint">It <em>is</em> a lever when hosts are slow: a host that
+          fails HTTPS then retries HTTP holds a worker ~16s, so 300 workers
+          &asymp; 19/s ceiling. Too few and HTTP starves; too many and the DNS
+          stage steals the event loop.</div>
+      </div>
+      <div class="field">
+        <label for="dnsconc">DNS concurrency</label>
+        <input id="dnsconc" type="number" value="800" min="10" step="100">
+        <div class="hint">This one <em>is</em> a throughput lever — DNS is
+          ~170 lookups per domain found. Measured on real domains:
+          400&rarr;691/s, 800&rarr;1078/s, 1600&rarr;1370/s. Higher wins until
+          resolvers time out. Watch <b>dns / sec</b> above.</div>
+      </div>
+      <div class="field">
+        <label for="dnsqps">DNS queries/sec per resolver</label>
+        <input id="dnsqps" type="number" value="0" min="0" step="10">
+        <div class="hint">Per-resolver pacing. <b>0 = off</b>, which is the
+          setting your fastest runs used. Pacing fixed a measured cliff in
+          isolation but did not reproduce end to end — kept as a dial rather
+          than a default.</div>
+      </div>
+      <div class="field">
+        <label for="nameservers">DNS resolver</label>
+        <input id="nameservers" type="text" placeholder="blank = public pool"
+               spellcheck="false">
+        <div class="hint">Leave blank to use the 9 public resolvers. Enter
+          <b>127.0.0.1</b> if you are running a local resolver (unbound) —
+          no per-client throttle, which is what caps the public pool under
+          load. Space or comma separated for several.</div>
+      </div>
+      <div class="field">
+        <label for="backlogbudget">Backlog hosts per run</label>
+        <input id="backlogbudget" type="number" value="500" min="0" step="100">
+        <div class="hint">Failed hosts retried at the start of a scan.
+          Measured at 5000 against a large backlog: the same known-bad hosts
+          re-pass the DNS filter every run and eat the whole request budget,
+          so fresh candidates never get verified — the tell is a prefilter
+          pass rate of 14% instead of ~1%. <b>0</b> scans only fresh
+          candidates.</div>
+      </div>
+      <div class="field">
+        <label for="threshold">Confidence cutoff</label>
+        <input id="threshold" type="number" value="70" min="0" max="100">
+        <div class="hint">Below 70 the false positives climb quickly.</div>
+      </div>
+      <div class="btnrow">
+        <button id="check" class="ghost">TEST SOURCES</button>
+      </div>
+      </details>
+
+      <h2 style="margin-top:24px">Export</h2>
+      <div class="exports">
+        <div class="exprow">
+          <button id="dl-session" class="ghost exp">
+            <span>THIS SESSION</span><em id="x-session">0</em></button>
+          <button id="cp-session" class="ghost cp" title="Copy to clipboard">COPY</button>
+        </div>
+        <div class="exprow">
+          <button id="dl-today" class="ghost exp">
+            <span>TODAY</span><em id="x-today">0</em></button>
+          <button id="cp-today" class="ghost cp" title="Copy to clipboard">COPY</button>
+        </div>
+        <div class="exprow">
+          <button id="dl-all" class="ghost exp">
+            <span>ALL TIME</span><em id="x-all">0</em></button>
+          <button id="cp-all" class="ghost cp" title="Copy to clipboard">COPY</button>
+        </div>
+      </div>
+      <div id="copied" class="copied"></div>
+
+      <div class="hint">Each downloads a separate file. <b>All time</b> is
+        cumulative — that is why repeated exports look duplicated. Nothing is
+        ever re-scanned; the scanner resumes deeper in the ranking every
+        run.</div>
+      <div id="err" class="err" style="display:none"></div>
+      <div id="log" class="log"></div>
+    </div>
+
+    <div class="ledger">
+      <div class="head"><div>#</div><div>Domain</div><div>Confidence</div><div>Found via</div></div>
+      <div id="rows"></div>
+      <div id="empty" class="empty">
+        No scan running. Pick your sources and press <code>BEGIN SCAN</code>.
+        Verified domains appear here as they are confirmed live, newest first.
+        Each scan is ruled off with its own header so you can see where a
+        run starts and ends.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+/* ---------------- theme: auto -> light -> dark, remembered ---------------- */
+const THEMES = ["auto","light","dark"];
+let theme = localStorage.getItem("sm-theme") || "auto";
+function applyTheme(){
+  document.documentElement.setAttribute("data-theme", theme);
+  $("#theme").textContent = theme.toUpperCase();
+  localStorage.setItem("sm-theme", theme);
+}
+$("#theme").onclick = () => {
+  theme = THEMES[(THEMES.indexOf(theme)+1) % THEMES.length];
+  applyTheme();
+};
+applyTheme();
+
+/* ---------------- number formatting ---------------- */
+const nf = new Intl.NumberFormat("en-US");
+const fmt = n => nf.format(Math.round(n||0));
+function compact(n){                      // 1234 -> 1.2k, 2400000 -> 2.4M
+  n = n||0;
+  if(n < 1000) return String(Math.round(n));
+  if(n < 1e6)  return (n/1e3).toFixed(n < 1e4 ? 1 : 0) + "k";
+  return (n/1e6).toFixed(n < 1e7 ? 1 : 0) + "M";
+}
+function dur(sec){
+  sec = Math.max(0, Math.round(sec||0));
+  const h = Math.floor(sec/3600), m = Math.floor(sec%3600/60), s = sec%60;
+  if(h) return `${h}h ${String(m).padStart(2,"0")}m`;
+  if(m) return `${m}m ${String(s).padStart(2,"0")}s`;
+  return `${s}s`;
+}
+
+/* ---------------- throughput chart ---------------- */
+let series = [], peak = 0;
+function drawChart(){
+  if(series.length < 2){ $("#spark").setAttribute("points","");
+                         $("#area").setAttribute("points",""); return; }
+  const max = Math.max(...series, 1);
+  const step = 1000 / (series.length - 1);
+  const y = v => (70 - (v/max)*58).toFixed(1);
+  const pts = series.map((v,i) => `${(i*step).toFixed(1)},${y(v)}`).join(" ");
+  $("#spark").setAttribute("points", pts);
+  $("#area").setAttribute("points", `0,76 ${pts} 1000,76`);
+  $("#grid1").setAttribute("points", `0,${y(max)} 1000,${y(max)}`);
+  $("#peak").textContent = `peak ${fmt(peak)} / min · max ${fmt(max)}`;
+}
+
+/* ---------------- ledger ---------------- */
+let seen = new Set(), running = false, lastRunId = null, runCount = 0, curSep = null;
+
+function bar(c){
+  const filled = Math.max(0, Math.min(10, Math.round(c/10)));
+  return "█".repeat(filled) + "░".repeat(10 - filled);
+}
+
+function newSeparator(runId, started){
+  runCount = 0;
+  const el = document.createElement("div");
+  el.className = "sep";
+  el.innerHTML = `<span class="tag">RUN ${runId}</span>
+    <span class="count">0 domains</span>
+    <span class="line"></span>
+    <span class="when">started ${started || "—"}</span>
+    <span class="arrow">&#9650; above</span>`;
+  $("#rows").prepend(el);
+  curSep = el.querySelector(".count");
+}
+
+function render(p){
+  /* headline numbers */
+  $("#m-rate").textContent    = fmt(p.rate);
+  $("#m-found").innerHTML     = fmt(p.found) +
+      (p.target ? `<small>&nbsp;/ ${compact(p.target)}</small>` : "");
+  $("#m-checked").textContent = compact(p.checked);
+  $("#m-total").textContent   = compact(p.total_domains);
+
+  /* progress toward target */
+  const pct = p.target ? Math.min(100, (p.found/p.target)*100) : 0;
+  $("#progbar").style.width = pct + "%";
+
+  /* secondary strip */
+  const dnsPerSec = p.elapsed ? (p.resolved||0)/p.elapsed : 0;
+  const hit = p.checked ? (p.found/p.checked)*100 : 0;
+  const remain = (p.target && p.rate) ? (p.target - p.found)/(p.rate/60) : 0;
+  // Only shown when a pool is configured; a benched pool stalls the
+  // scan, so it needs to be visible rather than silent.
+  $("#cell-proxy").hidden = !p.proxies;
+  if (p.proxies) $("#s-proxy").textContent = p.proxies;
+  $("#s-dns").textContent     = compact(p.resolved);
+  $("#s-dnsrate").textContent = compact(dnsPerSec);
+  $("#s-pass").textContent    = fmt(p.dns_passed);
+  $("#s-hit").textContent     = p.checked ? hit.toFixed(0) + "%" : "—";
+  $("#s-queue").textContent   = fmt(p.queued);
+  $("#s-dead").textContent    = compact(p.unreachable);
+  $("#s-backlog").textContent = compact(p.backlog_retryable);
+  $("#s-elapsed").textContent = dur(p.elapsed);
+  $("#s-eta").textContent     = (p.running && remain > 0) ? dur(remain) : "—";
+
+  /* chart */
+  if(p.running){
+    series.push(p.rate||0);
+    peak = Math.max(peak, p.rate||0);
+    if(series.length > 240) series.shift();
+    drawChart();
+    $("#now").textContent = fmt(p.rate) + " /min";
+  }
+
+  if(p.error){ $("#err").style.display = "block"; $("#err").textContent = p.error; }
+
+  /* new run -> rule off the ledger */
+  if(p.run_id && p.run_id !== lastRunId){
+    lastRunId = p.run_id;
+    if($("#rows").children.length) newSeparator(p.run_id, p.run_started);
+    else { $("#empty").style.display = "none"; newSeparator(p.run_id, p.run_started); }
+  }
+
+  /* append newly confirmed domains */
+  (p.recent || []).forEach(r => {
+    if(seen.has(r.domain)) return;
+    seen.add(r.domain);
+    runCount++;
+    $("#empty").style.display = "none";
+    const el = document.createElement("div");
+    el.className = "row new";
+    el.innerHTML = `<div class="n">${String(seen.size).padStart(5,"0")}</div>
+      <div class="d">${r.domain}</div>
+      <div class="c">${bar(r.confidence)}</div>
+      <div class="v">${r.via}</div>`;
+    $("#rows").prepend(el);
+    while($("#rows").children.length > 600) $("#rows").lastChild.remove();
+  });
+  if(curSep) curSep.textContent = `${fmt(runCount)} domain${runCount===1?"":"s"}`;
+
+  /* export counts -- so you can see what each button will actually give you */
+  const xs = p.session_domains||0, xt = p.today_domains||0, xa = p.total_domains||0;
+  $("#x-session").textContent = fmt(xs);
+  $("#x-today").textContent   = fmt(xt);
+  $("#x-all").textContent     = fmt(xa);
+  $("#dl-session").disabled = $("#cp-session").disabled = !xs;
+  $("#dl-today").disabled   = $("#cp-today").disabled   = !xt;
+  $("#dl-all").disabled     = $("#cp-all").disabled     = !xa;
+
+  $("#x-backlog").textContent = fmt(p.backlog_retryable || 0);
+  $("#purge").disabled = p.running || !(p.backlog_retryable || 0);
+
+  running = p.running;
+  const go = $("#go");
+  go.textContent = running ? "STOP SCAN" : "BEGIN SCAN";
+  go.classList.toggle("stop", running);
+  $("#check").disabled = running;
+}
+
+async function poll(){
+  try{ render(await (await fetch("/api/status")).json()); }catch(e){}
+  setTimeout(poll, 600);
+}
+
+$("#go").onclick = async () => {
+  if(running){ await fetch("/api/stop", {method:"POST"}); return; }
+  const sources = [...document.querySelectorAll(".src input:checked")].map(i => i.value);
+  if(!sources.length){
+    $("#err").style.display = "block";
+    $("#err").textContent = "Pick at least one source.";
+    return;
+  }
+  $("#err").style.display = "none";
+  saveSettings();
+  series = []; peak = 0; $("#now").textContent = "";
+  await fetch("/api/start", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      sources,
+      target: +$("#target").value,
+      rate: +$("#rate").value,
+      concurrency: +$("#concurrency").value,
+      dns_concurrency: +$("#dnsconc").value,
+      nameservers: $("#nameservers").value,
+      dns_qps: +$("#dnsqps").value,
+      proxies: $("#proxies").value,
+      proxy_qps: +$("#proxyqps").value,
+      proxy_active: +$("#proxyactive").value,
+      threshold: +$("#threshold").value,
+      backlog_budget: +$("#backlogbudget").value
+    })
+  });
+};
+
+
+/* ---- settings that survive a restart -------------------------------------
+   Stored on the server, not in localStorage: the desktop build binds a fresh
+   random port each launch, so the page origin changes and anything kept in
+   the browser is unreachable next time. Proxy credentials especially must
+   not need re-pasting every session. */
+const SETTING_IDS = ["target","rate","concurrency","dnsconc","nameservers",
+                     "dnsqps","proxies","proxyqps","proxyactive","threshold",
+                     "backlogbudget"];
+
+function collectSettings(){
+  const o = {};
+  for(const id of SETTING_IDS){
+    const el = $("#" + id);
+    if(el) o[id] = el.value;
+  }
+  o.sources = [...document.querySelectorAll('.src input:checked')]
+                .map(i => i.value);
+  return o;
+}
+
+let saveTimer = null;
+function saveSettings(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    fetch('/api/settings', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(collectSettings())}).catch(()=>{});
+  }, 400);                      // debounce: this fires on every keystroke
+}
+
+async function loadSettings(){
+  let s = {};
+  try { s = await (await fetch('/api/settings')).json(); } catch(e){ return; }
+  for(const id of SETTING_IDS){
+    const el = $("#" + id);
+    if(el && s[id] !== undefined && s[id] !== null) el.value = s[id];
+  }
+  if(Array.isArray(s.sources) && s.sources.length){
+    document.querySelectorAll('.src input').forEach(i => {
+      i.checked = s.sources.includes(i.value);
+    });
+  }
+  // Proxies are the reason this exists -- show them without a scroll.
+  if(s.proxies && s.proxies.trim()){
+    const n = s.proxies.trim().split(/[\n,]/).filter(x=>x.trim()).length;
+    const h = $('#proxycount');
+    if(h) h.textContent = n + (n === 1 ? ' proxy' : ' proxies') + ' remembered from your last session';
+  }
+}
+
+document.addEventListener('input',  e => {
+  if(e.target.closest('.panel')) saveSettings();
+});
+document.addEventListener('change', e => {
+  if(e.target.closest('.panel')) saveSettings();
+});
+loadSettings();
+
+$("#check").onclick = async () => {
+  $("#log").textContent = "Testing Common Crawl, crt.sh and a live storefront…";
+  const r = await (await fetch("/api/preflight", {method:"POST"})).json();
+  $("#log").textContent = r.ok
+    ? "Required sources reachable. A crt.sh warning is expected and harmless."
+    : "A required source is unreachable — see the terminal for which.";
+};
+
+function wireExport(id, scope){
+  $(id).onclick = () => { window.location = "/api/export?scope=" + scope; };
+}
+wireExport("#dl-session", "session");
+wireExport("#dl-today",   "today");
+wireExport("#dl-all",     "all");
+
+/* ---- copy to clipboard ----------------------------------------------------
+   Fetches the same endpoint the download uses, strips the `#` header so what
+   lands on the clipboard is a bare domain list ready to paste, and falls back
+   to a hidden textarea + execCommand where navigator.clipboard is unavailable
+   (it needs a secure context -- http://127.0.0.1 counts as one, but a LAN IP
+   would not).                                                              */
+async function copyText(text){
+  try{
+    await navigator.clipboard.writeText(text);
+    return true;
+  }catch(e){
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;left:-9999px;top:0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try{ ok = document.execCommand("copy"); }catch(e2){}
+    document.body.removeChild(ta);
+    return ok;
+  }
+}
+
+function wireCopy(id, scope, label){
+  const btn = $(id);
+  btn.onclick = async () => {
+    const prev = btn.textContent;
+    btn.textContent = "…";
+    try{
+      const raw = await (await fetch("/api/export?scope=" + scope)).text();
+      const domains = raw.split("\n")
+                         .filter(l => l && !l.startsWith("#"));
+      const ok = await copyText(domains.join("\n"));
+      btn.textContent = ok ? "DONE" : "FAIL";
+      btn.classList.toggle("done", ok);
+      $("#copied").textContent = ok
+        ? `Copied ${fmt(domains.length)} ${label} domains to clipboard.`
+        : "Clipboard blocked by the browser — use the download instead.";
+    }catch(e){
+      btn.textContent = "FAIL";
+      $("#copied").textContent = "Copy failed: " + e.message;
+    }
+    setTimeout(() => { btn.textContent = prev; btn.classList.remove("done"); }, 1600);
+  };
+}
+$("#purge").onclick = async () => {
+  const btn = $("#purge"), prev = btn.querySelector("span").textContent;
+  btn.querySelector("span").textContent = "PURGING…";
+  try{
+    const r = await (await fetch("/api/purge", {method:"POST"})).json();
+    $("#purgehint").textContent = r.ok
+      ? `Retired ${fmt(r.retired)} host(s). Backlog ${fmt(r.before)} → ${fmt(r.after)}. Results untouched.`
+      : (r.error || "Purge failed.");
+  }catch(e){
+    $("#purgehint").textContent = "Purge failed: " + e.message;
+  }
+  btn.querySelector("span").textContent = prev;
+};
+
+wireCopy("#cp-session", "session", "session");
+wireCopy("#cp-today",   "today",   "today's");
+wireCopy("#cp-all",     "all",     "all-time");
+
+poll();
+</script>
+</body>
+</html>

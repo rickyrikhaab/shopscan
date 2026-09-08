@@ -1,0 +1,51 @@
+# ---- data: never commit -----------------------------------------------------
+# 3.5 GB. The Common Crawl ranks cache is ~2 GB and the SQLite database passes
+# 1.5 GB; both are rebuildable and neither belongs in version control. The
+# database ALSO holds saved dashboard settings, which include proxy
+# credentials -- keeping it out is a secrets decision, not just a size one.
+data/
+*.db
+*.db-shm
+*.db-wal
+*.domains
+
+# Scan output -- the domain lists. Product of a run, not source.
+output/
+*.ndjson
+shopify_domains*.txt
+
+# ---- credentials ------------------------------------------------------------
+# Proxy lists in any form. Never commit these.
+proxies.txt
+proxies*.txt
+*proxies*.txt
+*.proxies
+
+# ---- build artifacts --------------------------------------------------------
+build/
+dist/
+installer/
+*.spec
+__pycache__/
+*.py[cod]
+
+# ---- environment ------------------------------------------------------------
+.venv/
+venv/
+.env
+
+# ---- app runtime files ------------------------------------------------------
+# Written next to the executable at run time; machine-specific.
+config.json
+startup.log
+
+# ---- leftovers from earlier experiments -------------------------------------
+# Kept on disk, out of the repo.
+dbF2/
+outF2/
+
+# ---- editor / OS ------------------------------------------------------------
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
