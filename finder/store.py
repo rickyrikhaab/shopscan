@@ -20,7 +20,7 @@ class Store:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._reached_buf: list[tuple[str]] = []
         self._requeue_buf: list[tuple[int, str]] = []
-        self._defer_buf: list[tuple[str]] = []
+        self._defer_buf: list[tuple[int, str]] = []
         # Stamped onto every result saved during the current scan so exports
         # can be scoped to one run instead of dumping the whole database.
         self.run_tag = 0
@@ -122,10 +122,19 @@ class Store:
             for i in range(0, len(hosts), 400):        # keep SQLite var limit happy
                 chunk = hosts[i:i + 400]
                 q = ",".join("?" * len(chunk))
+                # Select by host ONLY, then filter in Python. With
+                # `checked = 0` in the WHERE clause SQLite preferred
+                # idx_unchecked, which matches every pending row -- 772,000 of
+                # them -- and re-scanned that set for each 400-host chunk.
+                # Measured on the live database: 6.5 seconds per 5,000-host
+                # batch, throttling the producer to ~770 hosts/sec and starving
+                # the DNS stage completely. By host alone it uses the unique
+                # index and the same batch takes milliseconds.
                 rows = self.db.execute(
-                    f"SELECT host FROM seen_host WHERE checked = 0 AND host IN ({q})",
+                    f"SELECT host, checked FROM seen_host WHERE host IN ({q})",
                     chunk).fetchall()
-                got = [r[0] for r in rows]
+                known = {r[0]: r[1] for r in rows}
+                got = [h for h in chunk if known.get(h, 0) == 0]
                 if got:
                     self.db.executemany(
                         "UPDATE seen_host SET checked = 1 WHERE host = ?",
@@ -134,8 +143,18 @@ class Store:
             self.db.commit()
             return out
 
+    # A challenge is not the host's fault, so a deferred host gets far more
+    # chances than a genuinely broken one -- but NOT unlimited. Deferring
+    # without ever incrementing attempts left challenged hosts permanently
+    # claimable: a storm marked thousands of them checked=0 forever, and any
+    # later walk through that stretch of the ranking re-claimed them, re-passed
+    # them through DNS and re-checked them, finding nothing. Two regions of the
+    # ranks file were rendered dead that way -- 5,000 consecutive hostnames
+    # with exactly one never-seen host among them.
+    DEFER_ATTEMPTS = 12
+
     def defer(self, host: str) -> None:
-        """Put a host back WITHOUT spending one of its attempts.
+        """Put a host back, spending an attempt only against a generous cap.
 
         For refusals that are a verdict about us, not the host -- a Cloudflare
         bot challenge above all. The host may well be a perfectly good store;
@@ -144,7 +163,7 @@ class Store:
         thousands of good hosts thrown away per run. It also inflated the retry
         backlog past 600k, because every challenge wrote a row.
         """
-        self._defer_buf.append((host,))
+        self._defer_buf.append((self.DEFER_ATTEMPTS, host))
         if len(self._defer_buf) >= 500:
             self.flush_defer()
 
@@ -153,9 +172,13 @@ class Store:
             if not self._defer_buf:
                 return
             buf, self._defer_buf = self._defer_buf, []
-            # checked stays 0 so it comes back; attempts is untouched.
+            # Comes back until it has burned DEFER_ATTEMPTS chances, then
+            # retires like any other host that never worked.
             self.db.executemany(
-                "UPDATE seen_host SET checked = 0 WHERE host = ?", buf)
+                """UPDATE seen_host
+                   SET attempts = attempts + 1,
+                       checked  = CASE WHEN attempts + 1 >= ? THEN 1 ELSE 0 END
+                   WHERE host = ?""", buf)
             self.db.commit()
 
     def requeue(self, host: str, max_attempts: int = 3) -> None:
